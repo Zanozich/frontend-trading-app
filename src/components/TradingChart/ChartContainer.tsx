@@ -1,29 +1,35 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   createChart,
-  type IChartApi,
   CandlestickSeries,
+  type IChartApi,
   type CandlestickData,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import { fetchCandles } from '../api/fetchCandles';
+import { fetchCandles } from '../../api/fetchCandles';
+import { addVolumeSeries } from './VolumeSeries';
+
+interface ChartContainerProps {
+  symbol: string;
+  timeframe: string;
+}
 
 /**
- * Основной компонент графика.
- * Подгружает свечи и отображает их на полностью адаптивном холсте.
+ * Обёртка для инициализации графика и рендеринга свечей.
+ * Управляет: chart instance, data fetching, responsive resize.
  */
-const TradingChart: React.FC = () => {
-  const containerRef = useRef<HTMLDivElement>(null); // Контейнер для чарта
-  const chartRef = useRef<IChartApi | null>(null); // Инстанс чарта
-  const resizeObserver = useRef<ResizeObserver | null>(null); // Для авто-адаптации под размер
-
-  const [symbol] = useState('BTCUSDT'); // Можно заменить на state выбора
-  const [timeframe] = useState('1h');
+export const ChartContainer: React.FC<ChartContainerProps> = ({
+  symbol,
+  timeframe,
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const resizeObserver = useRef<ResizeObserver | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Инициализация чарта
+    // 🔧 Создание графика
     const chart = createChart(containerRef.current, {
       layout: {
         background: { color: '#000000' },
@@ -42,7 +48,7 @@ const TradingChart: React.FC = () => {
 
     chartRef.current = chart;
 
-    // Добавляем свечную серию
+    // 📊 Добавление свечной серии
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#26a69a',
       downColor: '#ef5350',
@@ -51,7 +57,7 @@ const TradingChart: React.FC = () => {
       wickDownColor: '#ef5350',
     });
 
-    // Подгрузка данных с API
+    // ⏬ Загрузка данных
     fetchCandles(symbol, timeframe).then((data) => {
       const formatted: CandlestickData[] = data
         .filter(
@@ -73,9 +79,19 @@ const TradingChart: React.FC = () => {
         .sort((a, b) => a.time - b.time);
 
       candleSeries.setData(formatted);
+      const volumeSeries = addVolumeSeries(chart);
+
+      // 🧮 Преобразуем и устанавливаем объём
+      const volumeData = data.map((candle) => ({
+        time: candle.time as UTCTimestamp,
+        value: candle.volume,
+        color: candle.close > candle.open ? '#26a69a' : '#ef5350',
+      }));
+
+      volumeSeries.setData(volumeData);
     });
 
-    // Ресайз при изменении размеров контейнера
+    // 📏 Автоматическое масштабирование при изменении размеров
     resizeObserver.current = new ResizeObserver(() => {
       if (containerRef.current && chartRef.current) {
         chartRef.current.resize(
@@ -87,6 +103,7 @@ const TradingChart: React.FC = () => {
 
     resizeObserver.current.observe(containerRef.current);
 
+    // 🧹 Очистка
     return () => {
       resizeObserver.current?.disconnect();
       chart.remove();
@@ -98,10 +115,8 @@ const TradingChart: React.FC = () => {
       ref={containerRef}
       style={{
         width: '100%',
-        height: '90vh', // Занимает всю высоту браузера
+        height: '90vh', // Автоматическая адаптация под окно
       }}
     />
   );
 };
-
-export default TradingChart;
